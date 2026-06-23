@@ -1,0 +1,237 @@
+{
+  "name": "pdf summarizer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pdf-summarizer",
+        "options": {}
+      },
+      "id": "1310d6d1-5bdb-44a1-ab3c-f58473b7e8d6",
+      "name": "Webhook - Tally Form",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "3f0b1515-a513-4b26-8930-720b824b5ecb"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst fields = body?.data?.fields || [];\n\nlet fullName = '';\nlet email = '';\nlet fileUrl = '';\n\nfor (const field of fields) {\n  const label = (field.label || '').toLowerCase();\n  const value = field.value;\n\n  if (label.includes('name')) {\n    fullName = value || '';\n  }\n  if (label.includes('email')) {\n    email = value || '';\n  }\n  if (label.includes('pdf') || label.includes('file') || label.includes('document') || label.includes('upload')) {\n    if (Array.isArray(value) && value.length > 0) {\n      fileUrl = value[0].url || '';\n    }\n  }\n}\n\nif (!email) throw new Error('Email nahi mili form se');\nif (!fileUrl) throw new Error('PDF URL nahi mila form se');\n\nreturn [{\n  json: {\n    fullName: fullName || 'User',\n    email,\n    fileUrl\n  }\n}];"
+      },
+      "id": "2dadd8a1-1106-4a63-871d-a12a44a17ee0",
+      "name": "Extract Form Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.fileUrl }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ff01c790-1e2f-4c02-927d-80fc50c0a647",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "6ae61783-8072-4680-a6c6-218104c2ed41",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pdfData = $input.first().json;\nconst prev = $('Extract Form Data').first().json;\n\nconst resumeText = pdfData.text || pdfData.content || '';\n\nif (!resumeText.trim()) {\n  throw new Error('PDF se text nahi mila - searchable PDF use karo');\n}\n\n// Groq ke liye request body banao\nconst requestBody = {\n  model: 'llama-3.3-70b-versatile',\n  temperature: 0.3,\n  max_tokens: 1500,\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are an expert document analyst. Reply with valid JSON only. No markdown. No extra text.'\n    },\n    {\n      role: 'user',\n      content: `Analyze this document and return JSON only:\\n\\nDOCUMENT:\\n${resumeText.slice(0, 4000)}\\n\\nReturn exactly this JSON structure:\\n{\\n\"title\": \"document title or topic in 5-7 words\",\\n\"summary\": \"clear 3-4 sentence summary of the entire document\",\\n\"key_points\": [\"point 1\", \"point 2\", \"point 3\", \"point 4\", \"point 5\"],\\n\"action_items\": [\"action 1\", \"action 2\", \"action 3\"],\\n\"document_type\": \"type of document (report/article/contract/manual etc)\",\\n\"word_count_estimate\": 500\\n}`\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    groq_body: JSON.stringify(requestBody),\n    email: prev.email,\n    fullName: prev.fullName,\n    fileUrl: prev.fileUrl\n  }\n}];"
+      },
+      "id": "77dfbe47-8793-4de5-8ec1-5383eddfdd8d",
+      "name": "Build Groq Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.groq_body }}",
+        "options": {}
+      },
+      "id": "7ea4fbe7-76b3-48fb-b04d-6e214d8dca2a",
+      "name": "Groq API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const groqResponse = $input.first().json;\nconst prev = $('Build Groq Request').first().json;\n\nlet analysis;\ntry {\n  const rawText = groqResponse.choices[0].message.content;\n  analysis = JSON.parse(rawText);\n} catch(e) {\n  throw new Error('Groq JSON parse error: ' + e.message);\n}\n\n// Key points HTML banao\nconst keyPointsHtml = (analysis.key_points || []).map(p => \n  `<li style=\"margin-bottom: 8px;\">${p}</li>`\n).join('');\n\n// Action items HTML banao\nconst actionItemsHtml = (analysis.action_items || []).map(a => \n  `<li style=\"margin-bottom: 8px;\">✅ ${a}</li>`\n).join('');\n\n// Email HTML banao\nconst emailHtml = `\n<div style=\"font-family: Arial, sans-serif; max-width: 600px; color: #1a1a1a; line-height: 1.8;\">\n\n  <div style=\"background: #1a1a2e; color: white; padding: 24px; border-radius: 8px 8px 0 0;\">\n    <h2 style=\"margin: 0; font-size: 20px;\">📄 Document Summary Ready</h2>\n    <p style=\"margin: 6px 0 0 0; opacity: 0.8; font-size: 13px;\">Powered by Groq AI</p>\n  </div>\n\n  <div style=\"padding: 24px; background: #f9f9f9; border: 1px solid #eee;\">\n\n    <p>Dear ${prev.fullName},</p>\n    <p>Your document has been analyzed. Here is the complete summary:</p>\n\n    <div style=\"background: white; border-left: 4px solid #4f46e5; padding: 16px 20px; margin: 20px 0; border-radius: 4px;\">\n      <p style=\"margin: 0 0 4px 0; font-size: 12px; color: #888;\">DOCUMENT TITLE</p>\n      <p style=\"margin: 0; font-weight: bold; font-size: 16px;\">${analysis.title || 'Untitled Document'}</p>\n      <p style=\"margin: 8px 0 0 0; font-size: 12px; color: #888;\">Type: ${analysis.document_type || 'Document'}</p>\n    </div>\n\n    <h3 style=\"color: #1a1a2e; border-bottom: 2px solid #4f46e5; padding-bottom: 8px;\">📋 Summary</h3>\n    <p style=\"background: white; padding: 16px; border-radius: 8px; border: 1px solid #eee;\">${analysis.summary}</p>\n\n    <h3 style=\"color: #1a1a2e; border-bottom: 2px solid #4f46e5; padding-bottom: 8px;\">🔑 Key Points</h3>\n    <ul style=\"background: white; padding: 16px 16px 16px 36px; border-radius: 8px; border: 1px solid #eee; margin: 0;\">\n      ${keyPointsHtml}\n    </ul>\n\n    <h3 style=\"color: #1a1a2e; border-bottom: 2px solid #4f46e5; padding-bottom: 8px;\">🎯 Action Items</h3>\n    <ul style=\"background: white; padding: 16px 16px 16px 36px; border-radius: 8px; border: 1px solid #eee; margin: 0; list-style: none;\">\n      ${actionItemsHtml}\n    </ul>\n\n    <p style=\"margin-top: 32px; font-size: 12px; color: #999;\">This summary was auto-generated by your n8n PDF Summarizer workflow.</p>\n\n  </div>\n</div>`;\n\nreturn [{\n  json: {\n    email: prev.email,\n    fullName: prev.fullName,\n    email_html: emailHtml,\n    title: analysis.title || 'Document Summary',\n    subject: `📄 Summary Ready: ${analysis.title || 'Your Document'}`\n  }\n}];"
+      },
+      "id": "e3d122a9-def8-4c23-b638-650a2cf69e98",
+      "name": "Parse & Build Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "0df02b61-b6ab-46b7-909d-b3897d5964a6",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        0
+      ],
+      "webhookId": "ead4abac-f9c8-47f0-b98e-8dd16876ebf7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "wrvXoIl7MUaQOFSP",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Tally Form": {
+      "main": [
+        [
+          {
+            "node": "Extract Form Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Form Data": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Build Groq Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Groq Request": {
+      "main": [
+        [
+          {
+            "node": "Groq API Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq API Call": {
+      "main": [
+        [
+          {
+            "node": "Parse & Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Build Email": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "131efc62-762a-4553-8851-bbb168684d5f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c7e3f7b78dd3a31a9f8901e16e153719dc193093f5a938d0e77f01b7546a7a7b"
+  },
+  "id": "fnn7CurYJNV4uAbn",
+  "tags": []
+}
