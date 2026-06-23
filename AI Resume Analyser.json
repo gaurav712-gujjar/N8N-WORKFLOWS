@@ -1,0 +1,229 @@
+{
+  "name": "AI Resume Analyser",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tally-resume",
+        "options": {}
+      },
+      "id": "c2cb1fc2-0c36-41aa-87b6-6bf4025a60e4",
+      "name": "Webhook - Tally Form",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "37fb0f20-8781-4abf-943d-b5fa7fdc8d65"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst fields = body?.data?.fields || [];\n\nlet fullName = '';\nlet email = '';\nlet fileUrl = '';\n\nfor (const field of fields) {\n  const label = (field.label || '').toLowerCase();\n  const value = field.value;\n\n  if (label.includes('name')) {\n    fullName = value || '';\n  }\n  if (label.includes('email')) {\n    email = value || '';\n  }\n  if (label.includes('resume') || label.includes('file') || label.includes('upload')) {\n    if (Array.isArray(value) && value.length > 0) {\n      fileUrl = value[0].url || '';\n    }\n  }\n}\n\nif (!email) throw new Error('Email nahi mili form se');\nif (!fileUrl) throw new Error('PDF URL nahi mila form se');\n\nreturn [{\n  json: {\n    fullName: fullName || 'Candidate',\n    email,\n    fileUrl\n  }\n}];"
+      },
+      "id": "30d3aec3-64df-4af6-9517-2f5784ffad59",
+      "name": "Extract Form Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.fileUrl }}",
+        "options": {}
+      },
+      "id": "e3d577d5-1c80-4289-85ee-47fa7b531a18",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "91d3c5e7-5f56-40b7-b515-6b6cf3d374d7",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pdfData = $input.first().json;\nconst prev = $('Extract Form Data').first().json;\n\nconst resumeText = pdfData.text || pdfData.content || '';\n\nif (!resumeText.trim()) {\n  throw new Error('PDF se text nahi mila - searchable PDF use karo');\n}\n\nconst prompt = 'Analyze this resume and return JSON only:\\n\\nRESUME:\\n' + resumeText.slice(0, 3000) + '\\n\\nReturn exactly:\\n{\"candidate_name\": \"full name\",\"current_role\": \"job title\",\"experience\": \"X+ years\",\"top_skills\": [\"skill1\",\"skill2\",\"skill3\"],\"score\": 85,\"strengths\": [\"s1\",\"s2\",\"s3\"],\"improvements\": [\"i1\",\"i2\"],\"summary\": \"2-3 sentence assessment\"}';\n\nreturn [{\n  json: {\n    resumeText: resumeText.slice(0, 3000),\n    email: prev.email,\n    fullName: prev.fullName,\n    groqBody: {\n      model: 'llama-3.3-70b-versatile',\n      temperature: 0.3,\n      max_tokens: 1000,\n      response_format: { type: 'json_object' },\n      messages: [\n        {\n          role: 'system',\n          content: 'You are an HR expert. Reply with valid JSON only. No markdown. No extra text.'\n        },\n        {\n          role: 'user',\n          content: prompt\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "d0db15a3-4a20-4e59-9022-a4e9a3ca6414",
+      "name": "Groq AI Analyze",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Your Resume Analysis is Ready ✓",
+        "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 580px; color: #1a1a1a; line-height: 1.8;\">\n\n  <p>Dear {{ $json.fullName }},</p>\n\n  <p>Thank you for submitting your resume. Here is your detailed analysis:</p>\n\n  <div style=\"background: #f8f8f8; border-left: 4px solid #222; padding: 16px 20px; margin: 24px 0; border-radius: 4px;\">\n    <p style=\"margin: 0 0 8px 0;\"><strong>👤 Name:</strong> {{ $json.candidate_name }}</p>\n    <p style=\"margin: 0 0 8px 0;\"><strong>💼 Current Role:</strong> {{ $json.current_role }}</p>\n    <p style=\"margin: 0 0 8px 0;\"><strong>📅 Experience:</strong> {{ $json.experience }}</p>\n    <p style=\"margin: 0 0 8px 0;\"><strong>🛠 Top Skills:</strong> {{ $json.top_skills.join(' · ') }}</p>\n    <p style=\"margin: 0;\"><strong>⭐ Rating:</strong> {{ $json.score_label }}</p>\n  </div>\n\n  <p><strong>📋 Summary:</strong><br/>{{ $json.summary }}</p>\n\n  <p><strong>✅ Strengths:</strong></p>\n  <ul style=\"padding-left: 20px;\">\n    {{ $json.strengths.map(s => '<li style=\"margin-bottom:4px\">' + s + '</li>').join('') }}\n  </ul>\n\n  <p><strong>📈 Areas to Improve:</strong></p>\n  <ul style=\"padding-left: 20px;\">\n    {{ $json.improvements.map(i => '<li style=\"margin-bottom:4px\">' + i + '</li>').join('') }}\n  </ul>\n\n  <p>We will be in touch soon!</p>\n\n  <p style=\"margin-top: 32px;\">Best regards,<br/><strong>HR Team</strong></p>\n\n</div>",
+        "options": {}
+      },
+      "id": "ee0f5d6a-7cbc-478d-8253-b9935d07aded",
+      "name": "Send Email Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        0
+      ],
+      "webhookId": "a736af6f-ea19-4c26-a4c0-281fe67c558b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "wrvXoIl7MUaQOFSP",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.groqBody) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1088,
+        0
+      ],
+      "id": "8350ece6-4065-4a61-b2d6-086c9ff87733",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OVQKlAexoQeRY7wK",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst prev = $('Extract Form Data').first().json;\n\nconst analysis = typeof response.choices[0].message.content === 'string'\n  ? JSON.parse(response.choices[0].message.content)\n  : response.choices[0].message.content;\n\nconst score = analysis.score || 0;\nconst scoreLabel = score >= 75 ? '🟢 Strong Profile' : score >= 50 ? '🟡 Good Profile' : '🔴 Needs Improvement';\n\nreturn [{\n  json: {\n    candidate_name: analysis.candidate_name || prev.fullName,\n    current_role: analysis.current_role || 'Not mentioned',\n    experience: analysis.experience || 'Not mentioned',\n    top_skills: analysis.top_skills || [],\n    score: score,\n    score_label: scoreLabel,\n    strengths: analysis.strengths || [],\n    improvements: analysis.improvements || [],\n    summary: analysis.summary || '',\n    email: prev.email,\n    fullName: prev.fullName\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        32
+      ],
+      "id": "4bc17c18-46fb-47f7-bf65-bb4c1e190549",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Tally Form": {
+      "main": [
+        [
+          {
+            "node": "Extract Form Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Form Data": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Groq AI Analyze",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq AI Analyze": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send Email Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "38c126f1-5205-4043-8a5d-c4464dbca1fe",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c7e3f7b78dd3a31a9f8901e16e153719dc193093f5a938d0e77f01b7546a7a7b"
+  },
+  "id": "ZbqEsaQhNgOXfTEZ",
+  "tags": []
+}
