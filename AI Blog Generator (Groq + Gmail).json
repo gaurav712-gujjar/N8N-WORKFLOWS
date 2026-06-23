@@ -1,0 +1,445 @@
+{
+  "name": "AI Blog Generator (Groq + Gmail)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "a48058c6-e2ec-411c-9d72-96ebee38f158",
+        "formTitle": "AI Blog Post Generator",
+        "formDescription": "Fill in the details and get a full blog post in your email!",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Blog Topic",
+              "placeholder": "e.g. AI in Finance",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Target Audience",
+              "placeholder": "e.g. Investment Bankers, Students, Small Business Owners",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Tone of Voice",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Professional"
+                  },
+                  {
+                    "option": "Casual & Friendly"
+                  },
+                  {
+                    "option": "Authoritative"
+                  },
+                  {
+                    "option": "Humorous"
+                  },
+                  {
+                    "option": "Direct & Concise"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Your Gmail Address",
+              "fieldType": "email",
+              "placeholder": "you@gmail.com",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "82b5c8d5-5593-43ec-9fcf-06ac96f264ad",
+      "name": "Blog Request Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "a48058c6-e2ec-411c-9d72-96ebee38f158"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "var_topic",
+              "name": "topic",
+              "value": "={{ $json['Blog Topic'] }}",
+              "type": "string"
+            },
+            {
+              "id": "var_audience",
+              "name": "audience",
+              "value": "={{ $json['Target Audience'] }}",
+              "type": "string"
+            },
+            {
+              "id": "var_tone",
+              "name": "tone",
+              "value": "={{ $json['Tone of Voice'] }}",
+              "type": "string"
+            },
+            {
+              "id": "var_email",
+              "name": "userEmail",
+              "value": "={{ $json['Your Gmail Address'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "414e8528-a29a-4614-8ee1-4ea0ef1b51cb",
+      "name": "Set Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 1024, temperature: 0.7, messages: [ { role: 'system', content: 'You are an expert blog content strategist. Create a detailed blog outline.' }, { role: 'user', content: 'Create a detailed blog post outline for the topic: ' + $json.topic + '. Target audience: ' + $json.audience + '. Tone: ' + $json.tone + '. Provide exactly 4 sections. For each section provide a title and 2-3 sentence description. Format EXACTLY like this: SECTION 1 TITLE: [title here] SECTION 1 DESC: [description here] SECTION 2 TITLE: [title here] SECTION 2 DESC: [description here] SECTION 3 TITLE: [title here] SECTION 3 DESC: [description here] SECTION 4 TITLE: [title here] SECTION 4 DESC: [description here]' } ] }) }}",
+        "options": {}
+      },
+      "id": "8cb73546-3379-47e2-9f7a-a7f1b372926c",
+      "name": "Step 1 Generate Outline Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OVQKlAexoQeRY7wK",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "var_outline_raw",
+              "name": "outlineRaw",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            },
+            {
+              "id": "var_topic2",
+              "name": "topic",
+              "value": "={{ $('Set Variables').item.json.topic }}",
+              "type": "string"
+            },
+            {
+              "id": "var_audience2",
+              "name": "audience",
+              "value": "={{ $('Set Variables').item.json.audience }}",
+              "type": "string"
+            },
+            {
+              "id": "var_tone2",
+              "name": "tone",
+              "value": "={{ $('Set Variables').item.json.tone }}",
+              "type": "string"
+            },
+            {
+              "id": "var_email2",
+              "name": "userEmail",
+              "value": "={{ $('Set Variables').item.json.userEmail }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8defead7-c426-40a2-b2a3-002a8b65b7a2",
+      "name": "Save Outline",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 3000, temperature: 0.7, messages: [ { role: 'system', content: 'You are an expert blog writer who writes detailed, engaging, well-researched blog posts in HTML format.' }, { role: 'user', content: 'Write a complete detailed blog post. TOPIC: ' + $json.topic + '. TARGET AUDIENCE: ' + $json.audience + '. TONE: ' + $json.tone + '. BLOG OUTLINE: ' + $json.outlineRaw + '. Instructions: Write a full blog post covering all 4 sections. Each section should be 150 to 200 words. Use the specified tone. Include a compelling introduction and conclusion. Format using HTML tags only: use h1 for main title, h2 for section headings, p for paragraphs, strong for emphasis. Write the complete HTML formatted blog post now.' } ] }) }}",
+        "options": {}
+      },
+      "id": "96e91f59-2db0-45af-adff-12adfdc1d390",
+      "name": "Step 2 Write Blog Post Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OVQKlAexoQeRY7wK",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "var_blog_content",
+              "name": "blogContent",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            },
+            {
+              "id": "var_topic3",
+              "name": "topic",
+              "value": "={{ $('Save Outline').item.json.topic }}",
+              "type": "string"
+            },
+            {
+              "id": "var_tone3",
+              "name": "tone",
+              "value": "={{ $('Save Outline').item.json.tone }}",
+              "type": "string"
+            },
+            {
+              "id": "var_email3",
+              "name": "userEmail",
+              "value": "={{ $('Save Outline').item.json.userEmail }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c4980dea-2f80-4334-a5de-dedef1377211",
+      "name": "Save Blog Content",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 60, temperature: 0.8, messages: [ { role: 'system', content: 'You create catchy blog post titles. Reply with ONLY the title. No quotes, no explanation, nothing else.' }, { role: 'user', content: 'Create one perfect blog post title for a ' + $json.tone + ' article about: ' + $json.topic } ] }) }}",
+        "options": {}
+      },
+      "id": "7acf0677-6dab-470a-8808-6659e27e9a0b",
+      "name": "Step 3 Generate Title Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OVQKlAexoQeRY7wK",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "var_title",
+              "name": "blogTitle",
+              "value": "={{ $json.choices[0].message.content.trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "var_blog_final",
+              "name": "blogContent",
+              "value": "={{ $('Save Blog Content').item.json.blogContent }}",
+              "type": "string"
+            },
+            {
+              "id": "var_email_final",
+              "name": "userEmail",
+              "value": "={{ $('Save Blog Content').item.json.userEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "var_topic_final",
+              "name": "topic",
+              "value": "={{ $('Save Blog Content').item.json.topic }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9819ee70-6451-4bcd-ba67-2e96751aef32",
+      "name": "Prepare Email Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1552,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.userEmail }}",
+        "subject": "=Your AI Blog Post: {{ $json.blogTitle }}",
+        "message": "=<div style=\"font-family: Georgia, serif; max-width: 700px; margin: 0 auto; padding: 20px; background: #f9f9f9;\"><div style=\"background: #4f46e5; color: white; padding: 30px; border-radius: 8px; margin-bottom: 30px; text-align: center;\"><p style=\"margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.85;\">AI Blog Generator</p><h2 style=\"margin: 8px 0 0; font-size: 22px;\">Your Blog Post is Ready!</h2></div><div style=\"background: white; padding: 40px; border-radius: 8px;\"><p style=\"display: inline-block; background: #4f46e5; color: white; padding: 4px 14px; border-radius: 20px; font-size: 13px;\">Topic: {{ $json.topic }}</p><div style=\"margin-top: 20px;\">{{ $json.blogContent }}</div></div><div style=\"margin-top: 20px; text-align: center; color: #999; font-size: 12px;\"><p>Generated with AI using Groq and n8n</p></div></div>",
+        "options": {
+          "senderName": "AI Blog Generator"
+        }
+      },
+      "id": "283c79a7-0bdf-45ad-bc8b-addc6f8b1e8f",
+      "name": "Send Blog via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        0
+      ],
+      "webhookId": "8f530958-c6b6-4741-987f-5d42c9c03453",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "wrvXoIl7MUaQOFSP",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Blog Request Form": {
+      "main": [
+        [
+          {
+            "node": "Set Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Variables": {
+      "main": [
+        [
+          {
+            "node": "Step 1 Generate Outline Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1 Generate Outline Groq": {
+      "main": [
+        [
+          {
+            "node": "Save Outline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Outline": {
+      "main": [
+        [
+          {
+            "node": "Step 2 Write Blog Post Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 Write Blog Post Groq": {
+      "main": [
+        [
+          {
+            "node": "Save Blog Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Blog Content": {
+      "main": [
+        [
+          {
+            "node": "Step 3 Generate Title Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 Generate Title Groq": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Blog via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b554f385-5fcb-4eb3-b987-eba317a5e5d9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c7e3f7b78dd3a31a9f8901e16e153719dc193093f5a938d0e77f01b7546a7a7b"
+  },
+  "id": "WM88lRBWbPhuXSst",
+  "tags": []
+}
